@@ -20,14 +20,39 @@ function getCurrentPosition(fn) {
 
 function getWeatherJsonFromCoordinates(lat, lon, fn) {
     fetch("https://api.openweathermap.org/data/2.5/weather?lat="+lat+"&lon="+lon+"&units=metric&appid=9c267e6baa6acb2b0131fb15ee8200bb").then(
-        t => { t.json().then(b => fn(b)) }
+        t => {
+            t.json().then(function(b) {
+                try {
+                    fn(b, true)
+                }
+                catch (e) {
+                    fn(null, false)
+                }
+            })
+        }
     )
 }
 
 function getWeatherJsonFromName(name, fn) {
-    fetch("https://api.openweathermap.org/data/2.5/weather?q="+name+"&units=metric&appid=9c267e6baa6acb2b0131fb15ee8200bb").then(
-        t => { t.json().then(b => fn(b)) }
-    )
+    try {
+        fetch("https://api.openweathermap.org/data/2.5/weather?q="+name+"&units=metric&appid=9c267e6baa6acb2b0131fb15ee8200bb").then(
+            t => {
+                t.json().then(function(b) {
+                    try {
+                        fn(b, true)
+                    }
+                    catch (e) {
+                        fn(null, false)
+                    }
+                })
+            }
+        )
+            .catch(t => fn(null, false))
+    }
+    catch (e) {
+        fn(null, false)
+    }
+
 }
 
 function createList(info) {
@@ -48,7 +73,7 @@ function weatherIconUrl(info) {
 
 function updateCurrentLocation() {
     getCurrentPosition(function (loc) {
-        getWeatherJsonFromCoordinates(loc[0], loc[1], function (info) {
+        getWeatherJsonFromCoordinates(loc[0], loc[1], function (info, status) {
             document.getElementById("current_weather_info").innerHTML = `
         <div class="left">
             <h2>`+info['name']+`</h2>
@@ -81,7 +106,7 @@ function createCityInList(info) {
             <div class="degree">` + info["main"]["temp"] + `°C</div>
             <img src="` + weatherIconUrl(info) + `">
             <div>
-                <button>x</button>
+                <button class="delete-button" city-id="`+info["id"]+`">x</button>
             </div>
         </div>
         ` + createList(info) + `
@@ -89,17 +114,92 @@ function createCityInList(info) {
     `
 }
 
+function createCityInListLoading(info) {
+    return `
+    <li>
+        <div class="block_header" >
+            <h3>` + info["name"] + `</h3>
+            <div class="degree"></div>
+            <div>
+                <button class="delete-button" city-id="`+info["id"]+`">x</button>
+            </div>
+        </div>
+        Загрузка
+    </li>
+    `
+}
+
+function deleteB() {
+    let w = document.getElementsByClassName("delete-button");
+    for (let i = 0; i < w.length; i++) {
+        w.item(i).addEventListener("click", function () {
+            w.item(i).parentElement.parentElement.parentElement.remove()
+            localStorage.removeItem(w.item(i).getAttribute("city-id"))
+        })
+    }
+}
+
 document.getElementById("new_city_form").onsubmit = function () {
-    let city = document.getElementById("new_city_form_input").value
+    let cityInput = document.getElementById("new_city_form_input")
+    let city = cityInput.value
+    cityInput.value = ""
 
     if (city === "") {
         alert("Пустое поле ввода")
         return false
     }
 
-    getWeatherJsonFromName(city, function (info) {
-        document.getElementById("favorites_list").insertAdjacentHTML("afterbegin", createCityInList(info))
+    if (city.toLowerCase() === "чита" || city.toLowerCase() === "chita") {
+        alert("Ошибка: слишком токсичный город")
+        return false
+    }
+
+    getWeatherJsonFromName(city, function (info, status) {
+        if (status) {
+            if (info["cod"] !== 200) {
+                alert("Произошла ошибка "+info["message"])
+            }
+            else if (localStorage.getItem(info["id"]) !== null) {
+                alert("Сорян город уже добавлен "+localStorage.getItem(info["id"]))
+            }
+            else {
+                document.getElementById("favorites_list").insertAdjacentHTML("afterbegin", createCityInList(info))
+                deleteB()
+                localStorage.setItem(info["id"], info["name"])
+            }
+        }
+        else {
+            alert("Произошла ошибка")
+        }
     })
 
     return false
+}
+
+for (let i = 0; i < localStorage.length; i++){
+    let key = localStorage.key(i)
+    let value = localStorage.getItem(key)
+    let info = {
+        name: value,
+        id: key
+    }
+
+    document.getElementById("favorites_list").insertAdjacentHTML("afterbegin", createCityInListLoading(info))
+
+    getWeatherJsonFromName(value, function (info, status) {
+        document.querySelectorAll('[city-id="'+key+'"]')[0].parentElement.parentElement.parentElement.remove()
+        if (status) {
+            if (info["cod"] !== 200) {
+                alert("Произошла ошибка "+info["message"])
+            }
+            else {
+                document.getElementById("favorites_list").insertAdjacentHTML("afterbegin", createCityInList(info))
+                deleteB()
+                localStorage.setItem(info["id"], info["name"])
+            }
+        }
+        else {
+            alert("Произошла ошибка")
+        }
+    })
 }
